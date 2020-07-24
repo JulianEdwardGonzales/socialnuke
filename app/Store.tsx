@@ -1,6 +1,6 @@
 import { observable, action, computed } from 'mobx';
 import React, { createContext, useContext } from 'react';
-import { remote } from 'electron';
+import { remote, Result } from 'electron';
 import { v4 } from 'uuid';
 import {
   getUser,
@@ -8,6 +8,7 @@ import {
   waitForSearch,
   removeMessage,
   sleep,
+  Results,
 } from './DiscordAPI';
 
 interface DiscordAccount {
@@ -15,6 +16,7 @@ interface DiscordAccount {
   token: string;
   name: string;
   refreshed: number;
+  iconUrl?: string;
 }
 
 export interface Task {
@@ -37,6 +39,9 @@ export class Store {
     this.discordAccounts = JSON.parse(
       localStorage.getItem('discordAccounts') || '[]'
     );
+
+    this.addDiscordAccount = this.addDiscordAccount.bind(this);
+    this.refreshDiscordAccounts = this.refreshDiscordAccounts.bind(this);
   }
 
   @action
@@ -83,6 +88,34 @@ export class Store {
   }
 
   @action
+  async refreshDiscordAccounts() {
+    for (let acc of this.discordAccounts) {
+      const account = await getUser(acc.token);
+      if (!account) {
+        this.discordAccounts = this.discordAccounts.filter(
+          (a) => acc.id !== a.id
+        );
+        continue;
+      }
+
+      acc.name = account.username + '#' + account.discriminator;
+      acc.refreshed = new Date().getTime();
+      acc.iconUrl = account.avatar
+        ? 'https://cdn.discordapp.com/avatars/' +
+          account.id +
+          '/' +
+          account.avatar +
+          '.png'
+        : undefined;
+    }
+
+    localStorage.setItem(
+      'discordAccounts',
+      JSON.stringify(this.discordAccounts)
+    );
+  }
+
+  @action
   async addDiscordAccount(token: string) {
     const account = await getUser(token);
     if (!account) {
@@ -95,6 +128,13 @@ export class Store {
       findAcc.name = account.username + '#' + account.discriminator;
       findAcc.token = token;
       findAcc.refreshed = new Date().getTime();
+      findAcc.iconUrl = account.avatar
+        ? 'https://cdn.discordapp.com/avatars/' +
+          account.id +
+          '/' +
+          account.avatar +
+          '.png'
+        : undefined;
 
       this.discordAccounts = [...this.discordAccounts];
     } else {
@@ -103,6 +143,13 @@ export class Store {
         name: account.username + '#' + account.discriminator,
         token: token,
         refreshed: new Date().getTime(),
+        iconUrl: account.avatar
+          ? 'https://cdn.discordapp.com/avatars/' +
+            account.id +
+            '/' +
+            account.avatar +
+            '.png'
+          : undefined,
       };
 
       this.discordAccounts = [...this.discordAccounts, acc];
@@ -123,18 +170,33 @@ export class Store {
   @action
   private async runQueueDiscord() {
     if (!this.queue[0]) return;
+    if (this.queue[0].state !== 'preparing') return;
 
     const { data, token } = this.queue[0];
 
     let ignored: string[] = [];
-    let lowestId: string | undefined = undefined;
+    let latestId: string | undefined = undefined;
     this.queue[0].current = 0;
 
     while (true) {
-      let res = await waitForSearch(token, {
-        ...data,
-        max_id: lowestId,
-      } as any);
+      // @ts-ignore
+      if (this.queue[0].state === 'cancelled') return;
+
+      let res: Results;
+      try {
+        let filters = {
+          ...data,
+        };
+
+        if (data.sort === 'oldest') {
+          filters.min_id = latestId;
+        } else {
+          filters.max_id = latestId;
+        }
+        res = await waitForSearch(token, filters);
+      } catch {
+        continue;
+      }
       const resMessages = res.messages;
 
       if (!this.queue[0].total) {
@@ -156,15 +218,13 @@ export class Store {
       this.queue[0].current = this.queue[0].total - res.total_results;
 
       const messages: any[] = resMessages.map((x: any) => {
-        return x.reduce((acc: any, val: any) => {
-          if (val.hit) return val;
-          else return acc;
-        });
+        return x.reduce((acc: any, val: any) => (val.hit ? val : acc));
       });
 
       for (var i = 0; i < messages.length; i++) {
         if (!ignored.includes(messages[i].id)) {
           while (true) {
+            // @ts-ignore
             if (this.queue[0].state === 'cancelled') return;
             try {
               await removeMessage(
@@ -172,20 +232,19 @@ export class Store {
                 messages[i].channel_id,
                 messages[i].id
               );
-              lowestId = messages[i].id;
+              latestId = messages[i].id;
+              await sleep(200);
               break;
             } catch (e) {
               try {
-                var errorJSON = JSON.parse(e.error);
-                if (errorJSON.code == 50021) {
+                if (e.message === 'No') {
                   ignored.push(messages[i].id);
                   break;
                 }
               } catch (e) {}
-              await sleep(150);
+              await sleep(200);
             }
           }
-          await sleep(150);
           this.queue[0].current = this.queue[0].current + 1;
         }
       }
@@ -210,6 +269,20 @@ export class Store {
       this.queue.shift();
     }
     this.runQueue();
+  }
+
+  @action
+  cancelTask(id: string) {
+    for (let task of this.queue) {
+      if (task.id === id) {
+        if (task.state === 'queued') {
+          this.queue = this.queue.filter((t) => task.id !== t.id);
+          return;
+        }
+
+        task.state = 'cancelled';
+      }
+    }
   }
 }
 

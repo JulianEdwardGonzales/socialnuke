@@ -12,8 +12,10 @@ import Modal from 'react-bootstrap/Modal';
 import { useStore, Task } from '../../Store';
 import { useState } from 'react';
 import { useEffect } from 'react';
-import { getOfType, waitForSearch } from '../../DiscordAPI';
+import { getOfType, waitForSearch, Filters } from '../../DiscordAPI';
 import { v4 } from 'uuid';
+import Breadcrumb from 'react-bootstrap/Breadcrumb';
+import { LinkContainer } from 'react-router-bootstrap';
 
 function Purge() {
   const store = useStore();
@@ -27,6 +29,7 @@ function Purge() {
       id: string;
       name: string;
       canDeleteAll: boolean;
+      iconUrl?: string;
     }[]
   >([]);
   const currentTarget = useMemo(
@@ -69,6 +72,22 @@ function Purge() {
     }
   }, [selected, type]);
 
+  const [has, setHas] = useState<
+    'link' | 'embed' | 'file' | 'video' | 'image' | 'sound' | undefined
+  >();
+  const [contains, setContains] = useState('');
+  const [oldest, setOldest] = useState(false);
+  const filters = useMemo(() => {
+    return {
+      author_id: selected,
+      type: type,
+      target: selectedTarget,
+      has,
+      contains: contains === '' || !contains ? undefined : contains,
+      sort: oldest ? 'oldest' : 'newest',
+    } as Filters;
+  }, [selected, type, selectedTarget, has, contains, oldest]);
+
   const [preparing, setPreparing] = useState(false);
   const [numberOfMessages, setNumberOfMessages] = useState(-1);
   const preparePurge = useCallback(async () => {
@@ -80,55 +99,43 @@ function Purge() {
     setNumberOfMessages(-1);
     setPreparing(true);
 
-    const messages = await waitForSearch(acc.token, {
-      author_id: selected,
-      type: type,
-      target: selectedTarget,
-    });
+    const messages = await waitForSearch(acc.token, filters);
 
     setNumberOfMessages(messages.total_results || 0);
     setPreparing(false);
-  }, [
-    preparing,
-    setPreparing,
-    setNumberOfMessages,
-    store,
-    selected,
-    type,
-    selectedTarget,
-  ]);
+  }, [preparing, setPreparing, setNumberOfMessages, store, selected, filters]);
 
   const confirmPurge = useCallback(() => {
     const acc = store.discordAccounts.find((acc) => acc.id === selected);
-    const target = targets.find((target) => target.id === selectedTarget);
-    if (!acc || !target) return;
+    if (!acc || !currentTarget) return;
 
     const task: Task = {
       id: v4(),
       account: acc.name,
       token: acc.token,
-      description: (type === 'channel' ? 'DMs' : 'Guild') + ': ' + target.name,
+      description:
+        (type === 'channel' ? 'DMs' : 'Guild') + ': ' + currentTarget.name,
       platform: 'discord',
       state: 'queued',
-      data: {
-        author_id: selected,
-        type,
-        target: selectedTarget,
-      },
+      data: filters,
     };
 
     store.addTask(task);
     setNumberOfMessages(-1);
-  }, [selected, type, selectedTarget, store, setNumberOfMessages]);
+  }, [selected, currentTarget, store, setNumberOfMessages, filters]);
 
   return (
     <>
+      <Breadcrumb>
+        <LinkContainer to="/">
+          <Breadcrumb.Item>Home</Breadcrumb.Item>
+        </LinkContainer>
+        <LinkContainer to="/discord">
+          <Breadcrumb.Item>Discord</Breadcrumb.Item>
+        </LinkContainer>
+        <Breadcrumb.Item active>Purge</Breadcrumb.Item>
+      </Breadcrumb>
       <Container fluid>
-        <Row>
-          <Col>
-            <h2>Discord</h2>
-          </Col>
-        </Row>
         <Row>
           <Col xs={3}>
             <h3>Account:</h3>
@@ -141,6 +148,9 @@ function Purge() {
                   active={acc.id === selected}
                   disabled={loading}
                 >
+                  {acc.iconUrl && (
+                    <img src={acc.iconUrl} className="target-icon" />
+                  )}
                   {acc.name}
                 </ListGroup.Item>
               ))}
@@ -148,8 +158,11 @@ function Purge() {
             </ListGroup>
             <p style={{ paddingTop: '10px' }}>
               <Button variant="primary" onClick={store.openDiscordLogin}>
-                Add new account
+                Add
               </Button>
+              <LinkContainer to="/discord/accounts">
+                <Button variant="primary">Manage</Button>
+              </LinkContainer>
             </p>
           </Col>
           <Col xs={3}>
@@ -185,6 +198,9 @@ function Purge() {
                   active={target.id === selectedTarget}
                   disabled={loading}
                 >
+                  {target.iconUrl && (
+                    <img src={target.iconUrl} className="target-icon" />
+                  )}
                   {target.name} {target.canDeleteAll ? <b>(M)</b> : ''}
                 </ListGroup.Item>
               ))}
@@ -196,10 +212,7 @@ function Purge() {
               Deleting only <b>own</b> messages.
             </p>
             <Form>
-              {/* <Form.Group controlId="beforeDate">
-              <Form.Label>Contains text</Form.Label>
-              <Form.Control type="text" />
-            </Form.Group>
+              {/* 
             <Form.Group controlId="beforeDate">
               <Form.Label>Before</Form.Label>
               <Form.Control type="text" />
@@ -208,18 +221,72 @@ function Purge() {
               <Form.Label>After</Form.Label>
               <Form.Control type="text" />
             </Form.Group>
-            <Form.Group controlId="contains">
-              <Form.Label>Contains</Form.Label>
-              <Form.Check type="radio" label="Anything" />
-              <Form.Check type="radio" label="File" />
-              <Form.Check type="radio" label="Image" />
-              <Form.Check type="radio" label="Embed" />
-              <Form.Check type="radio" label="Sound" />
-              <Form.Check type="radio" label="Video" />
-            </Form.Group> */}
+             */}
+              <Form.Group controlId="oldest">
+                <Form.Check
+                  type="checkbox"
+                  label="Start from oldest"
+                  checked={oldest}
+                  onChange={(e: React.ChangeEvent) =>
+                    setOldest((e.target as any).checked)
+                  }
+                />
+              </Form.Group>
+              <Form.Group controlId="containsText">
+                <Form.Label>Contains text</Form.Label>
+                <Form.Control
+                  type="text"
+                  value={contains}
+                  onChange={(e) => setContains(e.target.value)}
+                />
+              </Form.Group>
+              <Form.Group controlId="contains">
+                <Form.Label>Contains</Form.Label>
+                <Form.Check
+                  type="radio"
+                  label="Anything"
+                  id="anything"
+                  checked={has === undefined}
+                  onChange={() => setHas(undefined)}
+                />
+                <Form.Check
+                  type="radio"
+                  label="File"
+                  id="file"
+                  checked={has === 'file'}
+                  onChange={() => setHas('file')}
+                />
+                <Form.Check
+                  type="radio"
+                  label="Image"
+                  id="image"
+                  checked={has === 'image'}
+                  onChange={() => setHas('image')}
+                />
+                <Form.Check
+                  type="radio"
+                  label="Embed"
+                  id="embed"
+                  checked={has === 'embed'}
+                  onChange={() => setHas('embed')}
+                />
+                <Form.Check
+                  type="radio"
+                  label="Sound"
+                  id="sound"
+                  checked={has === 'sound'}
+                  onChange={() => setHas('sound')}
+                />
+                <Form.Check
+                  type="radio"
+                  label="Video"
+                  id="video"
+                  checked={has === 'video'}
+                  onChange={() => setHas('video')}
+                />
+              </Form.Group>
               <Button
                 variant="primary"
-                type="submit"
                 disabled={!selected || !currentTarget || loading}
                 onClick={preparePurge}
               >

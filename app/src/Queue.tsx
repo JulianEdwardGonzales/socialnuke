@@ -5,6 +5,7 @@ import ProgressBar from 'react-bootstrap/ProgressBar';
 import { LinkContainer } from 'react-router-bootstrap';
 import { useStore } from '../Store';
 import { observer } from 'mobx-react';
+import { Link } from 'react-router-dom';
 
 function Queue() {
   const { queue } = useStore();
@@ -37,7 +38,7 @@ function Queue() {
             <strong>{queue.length - 1} more items</strong>
           </p>
           <p>
-            <a href="#">View queue</a>
+            <Link to="/queue">View queue</Link>
           </p>
         </ListGroup.Item>
       )}

@@ -2,6 +2,7 @@ import React from 'react';
 import { Switch, Route, HashRouter } from 'react-router-dom';
 import Bar from './Bar';
 import { observer } from 'mobx-react';
+import HomeQueue from './home/Queue';
 import HomeHome from './home/Home';
 import DiscordHome from './discord/Home';
 import DiscordPurge from './discord/Purge';
@@ -22,6 +23,9 @@ function App() {
         </Route>
         <Route path="/discord">
           <DiscordHome />
+        </Route>
+        <Route path="/queue">
+          <HomeQueue />
         </Route>
         <Route>
           <HomeHome />

@@ -51,8 +51,25 @@
   }
 }
 
+a.btn,
+button {
+  margin-right: 10px;
+}
+
+.target-icon {
+  max-width: 32px;
+  border-radius: 8px;
+  margin-right: 5px;
+}
+
+.breadcrumb {
+  border-radius: 0;
+}
+
 .jumbotron {
-  a.btn {
-    margin-right: 10px;
-  }
+  margin: 0 20px;
+}
+
+h3 {
+  font-size: 1.4rem;
 }

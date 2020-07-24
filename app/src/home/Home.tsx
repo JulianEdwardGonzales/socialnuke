@@ -16,6 +16,9 @@ function Home() {
             <LinkContainer to="/discord">
               <Button variant="primary">Discord</Button>
             </LinkContainer>
+            <LinkContainer to="/queue">
+              <Button variant="primary">Queue</Button>
+            </LinkContainer>
           </p>
         </Col>
       </Row>
