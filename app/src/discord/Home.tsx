@@ -22,9 +22,6 @@ function Home() {
         <h1>Discord</h1>
         <p>Perform actions on Discord.</p>
         <p>
-          <LinkContainer to="/discord/accounts">
-            <Button variant="primary">Manage accounts</Button>
-          </LinkContainer>
           <LinkContainer to="/discord/purge">
             <Button variant="primary">Purge</Button>
           </LinkContainer>

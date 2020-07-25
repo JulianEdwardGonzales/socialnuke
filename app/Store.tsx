@@ -1,17 +1,16 @@
 import { observable, action, computed } from 'mobx';
 import React, { createContext, useContext } from 'react';
-import { remote, Result } from 'electron';
+import { remote } from 'electron';
 import { v4 } from 'uuid';
-import {
-  getUser,
-  getMessages,
-  waitForSearch,
-  removeMessage,
-  sleep,
-  Results,
-} from './DiscordAPI';
+import * as DiscordAPI from './DiscordAPI';
+import * as RedditAPI from './RedditAPI';
+import autobind from 'autobind-decorator';
+import { sleep } from './common';
 
-interface DiscordAccount {
+type Platform = 'discord' | 'twitter' | 'reddit';
+
+interface Account {
+  platform: Platform;
   id: string;
   token: string;
   name: string;
@@ -21,7 +20,7 @@ interface DiscordAccount {
 
 export interface Task {
   id: string;
-  platform: 'discord';
+  platform: Platform;
   account: string;
   token: string;
   description: string;
@@ -32,24 +31,27 @@ export interface Task {
 }
 
 export class Store {
-  @observable discordAccounts: DiscordAccount[] = [];
+  @observable accounts: Account[] = [];
   @observable queue: Task[] = [];
 
   constructor() {
-    this.discordAccounts = JSON.parse(
-      localStorage.getItem('discordAccounts') || '[]'
-    );
+    this.accounts = JSON.parse(localStorage.getItem('accounts') || '[]');
+  }
 
-    this.addDiscordAccount = this.addDiscordAccount.bind(this);
-    this.refreshDiscordAccounts = this.refreshDiscordAccounts.bind(this);
+  @autobind
+  @action
+  openDiscordLogin() {
+    this.openLogin('discord');
   }
 
   @action
-  async openDiscordLogin() {
-    let myWindow = new remote.BrowserWindow({
+  openLogin(platform: Platform) {
+    const loginWindow = new remote.BrowserWindow({
       width: 800,
       height: 800,
       center: true,
+      parent: top as any,
+      modal: true,
       webPreferences: {
         enableRemoteModule: false,
         sandbox: true,
@@ -59,9 +61,14 @@ export class Store {
     });
 
     let complete = false;
-    myWindow.webContents.session.webRequest.onBeforeSendHeaders(
+    loginWindow.webContents.session.webRequest.onBeforeSendHeaders(
       {
-        urls: ['https://discord.com/api/*'],
+        urls: [
+          'https://discord.com/api/*',
+          'https://api.twitter.com/*',
+          'https://s.reddit.com/*',
+          'https://oauth.reddit.com/*',
+        ],
       },
       (details, callback) => {
         if (complete) {
@@ -74,50 +81,85 @@ export class Store {
           details.requestHeaders['Authorization'] !== 'undefined'
         ) {
           complete = true;
-          const token = details.requestHeaders['Authorization'];
-          this.addDiscordAccount(token);
-          myWindow.close();
+          switch (platform) {
+            case 'discord':
+              this.addDiscordAccount(details.requestHeaders['Authorization']);
+              break;
+            case 'twitter':
+              this.addTwitterAccount(
+                details.requestHeaders['Authorization'].split(' ')[1]
+              );
+              break;
+            case 'reddit':
+              this.addRedditAccount(
+                details.requestHeaders['Authorization'].split(' ')[1]
+              );
+              break;
+          }
+          loginWindow.close();
         }
 
         callback({ cancel: false, requestHeaders: details.requestHeaders });
       }
     );
 
-    // replace with whatever html you want to load in your electron window
-    myWindow.loadURL(`https://discord.com/login`);
+    switch (platform) {
+      case 'discord':
+        loginWindow.loadURL('https://discord.com/login');
+        break;
+      case 'twitter':
+        loginWindow.loadURL('https://twitter.com/login');
+        break;
+      case 'reddit':
+        loginWindow.loadURL('https://new.reddit.com/login/');
+        break;
+    }
   }
 
+  @autobind
   @action
   async refreshDiscordAccounts() {
-    for (let acc of this.discordAccounts) {
-      const account = await getUser(acc.token);
-      if (!account) {
-        this.discordAccounts = this.discordAccounts.filter(
-          (a) => acc.id !== a.id
-        );
-        continue;
-      }
+    for (let acc of this.accounts) {
+      while (true) {
+        try {
+          const account = await DiscordAPI.getUser(acc.token);
+          if (!account) {
+            this.removeAccount('discord', acc.id);
+            break;
+          }
 
-      acc.name = account.username + '#' + account.discriminator;
-      acc.refreshed = new Date().getTime();
-      acc.iconUrl = account.avatar
-        ? 'https://cdn.discordapp.com/avatars/' +
-          account.id +
-          '/' +
-          account.avatar +
-          '.png'
-        : undefined;
+          acc.name = account.username + '#' + account.discriminator;
+          acc.refreshed = new Date().getTime();
+          acc.iconUrl = account.avatar
+            ? 'https://cdn.discordapp.com/avatars/' +
+              account.id +
+              '/' +
+              account.avatar +
+              '.png'
+            : undefined;
+        } catch (e) {
+          if (e.message === 'No') {
+            this.removeAccount('discord', acc.id);
+            break;
+          }
+        }
+
+        await sleep(200);
+      }
     }
 
-    localStorage.setItem(
-      'discordAccounts',
-      JSON.stringify(this.discordAccounts)
-    );
+    this.onAccountsUpdated();
+  }
+
+  @autobind
+  @action
+  refreshAccounts() {
+    this.refreshDiscordAccounts();
   }
 
   @action
   async addDiscordAccount(token: string) {
-    const account = await getUser(token);
+    const account = await DiscordAPI.getUser(token);
     if (!account) {
       alert('Invalid token');
       return;
@@ -136,9 +178,10 @@ export class Store {
           '.png'
         : undefined;
 
-      this.discordAccounts = [...this.discordAccounts];
+      this.accounts = [...this.accounts];
     } else {
-      const acc: DiscordAccount = {
+      const acc: Account = {
+        platform: 'discord',
         id: account.id,
         name: account.username + '#' + account.discriminator,
         token: token,
@@ -152,19 +195,79 @@ export class Store {
           : undefined,
       };
 
-      this.discordAccounts = [...this.discordAccounts, acc];
+      this.accounts = [...this.accounts, acc];
     }
 
-    localStorage.setItem(
-      'discordAccounts',
-      JSON.stringify(this.discordAccounts)
-    );
+    this.onAccountsUpdated();
+  }
+
+  @action
+  async addTwitterAccount(token: string) {}
+
+  @action
+  async addRedditAccount(token: string) {
+    const account = await RedditAPI.getUser(token);
+    if (!account) {
+      alert('Invalid token');
+      return;
+    }
+
+    const findAcc = this.redditAccounts.find((acc) => acc.id === account.id);
+    if (findAcc) {
+      findAcc.name = account.name;
+      findAcc.token = token;
+      findAcc.refreshed = new Date().getTime();
+      findAcc.iconUrl = account.icon_img;
+
+      this.accounts = [...this.accounts];
+    } else {
+      const acc: Account = {
+        platform: 'reddit',
+        id: account.id,
+        name: account.name,
+        token: token,
+        refreshed: new Date().getTime(),
+        iconUrl: account.icon_img,
+      };
+
+      this.accounts = [...this.accounts, acc];
+    }
+
+    this.onAccountsUpdated();
   }
 
   @action
   async addTask(task: Task) {
     this.queue.push(task);
     this.runQueue();
+  }
+
+  @computed
+  get twitterAccounts() {
+    return this.accounts.filter((acc) => acc.platform === 'twitter');
+  }
+
+  @computed
+  get redditAccounts() {
+    return this.accounts.filter((acc) => acc.platform === 'reddit');
+  }
+
+  @computed
+  get discordAccounts() {
+    return this.accounts.filter((acc) => acc.platform === 'discord');
+  }
+
+  @action
+  removeAccount(platform: Platform, id: string) {
+    this.accounts = this.accounts.filter(
+      (acc) => !(acc.platform === platform, acc.id === id)
+    );
+
+    this.onAccountsUpdated();
+  }
+
+  onAccountsUpdated() {
+    localStorage.setItem('accounts', JSON.stringify(this.accounts));
   }
 
   @action
@@ -182,7 +285,7 @@ export class Store {
       // @ts-ignore
       if (this.queue[0].state === 'cancelled') return;
 
-      let res: Results;
+      let res: DiscordAPI.Results;
       try {
         let filters = {
           ...data,
@@ -193,7 +296,7 @@ export class Store {
         } else {
           filters.max_id = latestId;
         }
-        res = await waitForSearch(token, filters);
+        res = await DiscordAPI.waitForSearch(token, filters);
       } catch {
         continue;
       }
@@ -227,7 +330,7 @@ export class Store {
             // @ts-ignore
             if (this.queue[0].state === 'cancelled') return;
             try {
-              await removeMessage(
+              await DiscordAPI.removeMessage(
                 token,
                 messages[i].channel_id,
                 messages[i].id

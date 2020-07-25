@@ -19,18 +19,15 @@ function Accounts() {
         <LinkContainer to="/">
           <Breadcrumb.Item>Home</Breadcrumb.Item>
         </LinkContainer>
-        <LinkContainer to="/discord">
-          <Breadcrumb.Item>Discord</Breadcrumb.Item>
-        </LinkContainer>
         <Breadcrumb.Item active>Accounts</Breadcrumb.Item>
       </Breadcrumb>
       <Container fluid>
         <Row style={{ paddingBottom: 20 }}>
           <Col xs={12}>
             <Button variant="primary" onClick={store.openDiscordLogin}>
-              Add new account
+              Add Discord account
             </Button>
-            <Button variant="primary" onClick={store.refreshDiscordAccounts}>
+            <Button variant="primary" onClick={store.refreshAccounts}>
               Refresh accounts
             </Button>
           </Col>
@@ -40,20 +37,21 @@ function Accounts() {
             <Table striped bordered hover>
               <thead>
                 <tr>
-                  <th style={{ width: 32 }}></th>
+                  <th>Platform</th>
                   <th>Name</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {store.discordAccounts.map((acc) => (
+                {store.accounts.map((acc) => (
                   <tr key={acc.id}>
+                    <td>{acc.platform}</td>
                     <td>
                       {acc.iconUrl && (
                         <img src={acc.iconUrl} className="target-icon" />
                       )}
+                      {acc.name}
                     </td>
-                    <td>{acc.name}</td>
                     <td>
                       <Button variant="primary">Remove from socialnuke</Button>
                     </td>

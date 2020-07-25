@@ -160,7 +160,7 @@ function Purge() {
               <Button variant="primary" onClick={store.openDiscordLogin}>
                 Add
               </Button>
-              <LinkContainer to="/discord/accounts">
+              <LinkContainer to="/accounts">
                 <Button variant="primary">Manage</Button>
               </LinkContainer>
             </p>

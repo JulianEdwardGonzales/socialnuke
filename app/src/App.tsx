@@ -6,7 +6,7 @@ import HomeQueue from './home/Queue';
 import HomeHome from './home/Home';
 import DiscordHome from './discord/Home';
 import DiscordPurge from './discord/Purge';
-import DiscordAccounts from './discord/Accounts';
+import HomeAccounts from './home/Accounts';
 import Queue from './Queue';
 
 function App() {
@@ -15,14 +15,14 @@ function App() {
       <Bar />
       <Queue />
       <Switch>
-        <Route path="/discord/accounts">
-          <DiscordAccounts />
-        </Route>
         <Route path="/discord/purge">
           <DiscordPurge />
         </Route>
         <Route path="/discord">
           <DiscordHome />
+        </Route>
+        <Route path="/accounts">
+          <HomeAccounts />
         </Route>
         <Route path="/queue">
           <HomeQueue />

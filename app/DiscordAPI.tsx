@@ -1,3 +1,5 @@
+import { sleep } from './common';
+
 const ENDPOINT = 'https://discord.com/api/v6/';
 
 export interface Results {
@@ -29,10 +31,6 @@ export function getHeaders(token: string) {
   };
 }
 
-export function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export async function waitForSearch(
   token: string,
   filters: Filters
@@ -62,6 +60,14 @@ export async function getUser(token: string) {
     const res = await fetch(ENDPOINT + 'users/@me', {
       headers: getHeaders(token),
     });
+
+    if (res.status === 403) {
+      throw new Error('No');
+    }
+
+    if (res.status !== 200) {
+      throw new Error('Rate limited?');
+    }
 
     return await res.json();
   } catch {
