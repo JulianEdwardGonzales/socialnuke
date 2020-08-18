@@ -50,6 +50,8 @@ export class Store {
       width: 800,
       height: 800,
       center: true,
+      parent: remote.getCurrentWindow(),
+      modal: true,
       webPreferences: {
         enableRemoteModule: false,
         sandbox: true,
