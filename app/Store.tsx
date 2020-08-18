@@ -50,8 +50,6 @@ export class Store {
       width: 800,
       height: 800,
       center: true,
-      parent: top as any,
-      modal: true,
       webPreferences: {
         enableRemoteModule: false,
         sandbox: true,
@@ -330,12 +328,12 @@ export class Store {
             // @ts-ignore
             if (this.queue[0].state === 'cancelled') return;
             try {
+              latestId = messages[i].id;
               await DiscordAPI.removeMessage(
                 token,
                 messages[i].channel_id,
                 messages[i].id
               );
-              latestId = messages[i].id;
               await sleep(200);
               break;
             } catch (e) {
